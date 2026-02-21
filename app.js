@@ -14,6 +14,8 @@ const state = {
     rightText: "",
     rightLocked: true,
     rightDirty: false,
+    leftLayout: null,
+    rightLayout: null,
     leftParse: emptyParse(),
     rightParse: emptyParse(),
     lastHighlighted: {
@@ -33,6 +35,8 @@ const state = {
     diffRows: [],
     diffDirtySinceRecompute: false,
 };
+let charMeasureCanvas = null;
+const monoCharWidthCache = new Map();
 const elements = {
     loadSampleBtn: byId("load-sample-btn"),
     resyncBtn: byId("resync-btn"),
@@ -194,6 +198,12 @@ function bindEvents() {
         const ok = await copyPathText(state.currentPath);
         showToast(ok ? "Path copied." : "Clipboard write failed.");
     });
+    window.addEventListener("resize", () => {
+        renderEditorLineNumbers();
+        if (state.mode === "json" && !state.rightLocked && state.rightParse.ok) {
+            paintFoldGutter();
+        }
+    });
 }
 function refreshFromLeft(source) {
     state.leftParse = parseJsonWithDiagnostics(state.leftText);
@@ -236,6 +246,7 @@ function unlockRight() {
 function lockRight() {
     state.rightLocked = true;
     state.rightDirty = false;
+    state.rightLayout = null;
     state.rightText = "";
     state.rightParse = emptyParse();
     state.jsonFoldCollapsed.clear();
@@ -410,8 +421,9 @@ function highlightError(textarea, position, focus) {
     }
     textarea.setSelectionRange(start, end);
     const lineNumber = textarea.value.slice(0, start).split(/\r?\n/).length;
-    const lineHeight = getEditorLineHeight(textarea);
-    textarea.scrollTop = Math.max(0, (lineNumber - 3) * lineHeight);
+    const layout = computeTextLayoutMetrics(textarea);
+    const lineTop = layout.lineTops[Math.max(0, lineNumber - 1)] ?? 0;
+    textarea.scrollTop = Math.max(0, lineTop - layout.lineHeight * 2);
     textarea.classList.add("error-focus");
     window.setTimeout(() => {
         textarea.classList.remove("error-focus");
@@ -531,8 +543,13 @@ function paintFoldGutter() {
     const paddingTop = Number.parseFloat(computed.paddingTop) || 12;
     const scrollTop = elements.rightInput.scrollTop;
     const viewportHeight = elements.rightInput.clientHeight;
+    const lineCount = Math.max(1, elements.rightInput.value.split(/\r?\n/).length);
+    const layout = state.rightLayout && state.rightLayout.lineHeights.length === lineCount
+        ? state.rightLayout
+        : computeTextLayoutMetrics(elements.rightInput);
     markers.forEach((marker) => {
-        const y = paddingTop + marker.line * lineHeight - scrollTop;
+        const lineTop = layout.lineTops[marker.line] ?? marker.line * lineHeight;
+        const y = paddingTop + lineTop - scrollTop;
         if (y < -20 || y > viewportHeight + 20) {
             return;
         }
@@ -561,17 +578,21 @@ function toggleFold(pathKey) {
     renderEditorLineNumbers();
 }
 function renderEditorLineNumbers() {
-    renderLineNumbersFor(elements.leftInput, elements.leftLines, state.errorLineFocus.left);
+    state.leftLayout = renderLineNumbersFor(elements.leftInput, elements.leftLines, state.errorLineFocus.left);
     if (state.rightLocked) {
         elements.rightLines.textContent = "";
         elements.rightLines.style.transform = "translateY(0px)";
+        state.rightLayout = null;
         return;
     }
-    renderLineNumbersFor(elements.rightInput, elements.rightLines, state.errorLineFocus.right);
+    state.rightLayout = renderLineNumbersFor(elements.rightInput, elements.rightLines, state.errorLineFocus.right);
+    if (state.mode === "json" && state.rightParse.ok) {
+        paintFoldGutter();
+    }
 }
 function renderLineNumbersFor(textarea, linesContainer, errorLine) {
-    const lineCount = Math.max(1, textarea.value.split(/\r?\n/).length);
-    const lineHeight = getEditorLineHeight(textarea);
+    const metrics = computeTextLayoutMetrics(textarea);
+    const lineCount = Math.max(1, metrics.lineHeights.length);
     const fragment = document.createDocumentFragment();
     for (let line = 1; line <= lineCount; line += 1) {
         const item = document.createElement("div");
@@ -579,14 +600,15 @@ function renderLineNumbersFor(textarea, linesContainer, errorLine) {
         if (errorLine === line) {
             item.classList.add("error-line");
         }
-        item.style.height = `${lineHeight}px`;
-        item.style.lineHeight = `${lineHeight}px`;
+        item.style.height = `${metrics.lineHeights[line - 1]}px`;
+        item.style.lineHeight = `${metrics.lineHeight}px`;
         item.textContent = String(line);
         fragment.appendChild(item);
     }
     linesContainer.textContent = "";
     linesContainer.appendChild(fragment);
     syncLineNumbers(textarea, linesContainer);
+    return metrics;
 }
 function syncLineNumbers(textarea, linesContainer) {
     linesContainer.style.transform = `translateY(${-textarea.scrollTop}px)`;
@@ -595,6 +617,67 @@ function getEditorLineHeight(textarea) {
     const computed = window.getComputedStyle(textarea);
     const lineHeight = Number.parseFloat(computed.lineHeight);
     return Number.isFinite(lineHeight) && lineHeight > 0 ? lineHeight : 20;
+}
+function computeTextLayoutMetrics(textarea) {
+    const lineHeight = getEditorLineHeight(textarea);
+    const wrapColumns = computeWrapColumns(textarea);
+    const lines = textarea.value.split(/\r?\n/);
+    const lineCount = Math.max(1, lines.length);
+    const lineTops = [];
+    const lineHeights = [];
+    let top = 0;
+    for (let index = 0; index < lineCount; index += 1) {
+        const text = lines[index] ?? "";
+        const rows = estimateWrappedRows(text, wrapColumns);
+        const height = Math.max(lineHeight, rows * lineHeight);
+        lineTops.push(top);
+        lineHeights.push(height);
+        top += height;
+    }
+    return {
+        lineHeight,
+        lineTops,
+        lineHeights,
+        totalHeight: top,
+    };
+}
+function computeWrapColumns(textarea) {
+    const computed = window.getComputedStyle(textarea);
+    const paddingLeft = Number.parseFloat(computed.paddingLeft) || 0;
+    const paddingRight = Number.parseFloat(computed.paddingRight) || 0;
+    const contentWidth = Math.max(1, textarea.clientWidth - paddingLeft - paddingRight);
+    const charWidth = getMonoCharWidth(computed);
+    return Math.max(1, Math.floor(contentWidth / charWidth));
+}
+function getMonoCharWidth(computed) {
+    const key = `${computed.font}|${computed.letterSpacing}`;
+    const cached = monoCharWidthCache.get(key);
+    if (cached) {
+        return cached;
+    }
+    if (!charMeasureCanvas) {
+        charMeasureCanvas = document.createElement("canvas");
+    }
+    const context = charMeasureCanvas.getContext("2d");
+    let width = 8;
+    if (context) {
+        context.font = computed.font;
+        width = context.measureText("0").width;
+    }
+    const letterSpacing = Number.parseFloat(computed.letterSpacing);
+    if (Number.isFinite(letterSpacing)) {
+        width += letterSpacing;
+    }
+    const normalized = Number.isFinite(width) && width > 0 ? width : 8;
+    monoCharWidthCache.set(key, normalized);
+    return normalized;
+}
+function estimateWrappedRows(text, wrapColumns) {
+    if (wrapColumns <= 1) {
+        return Math.max(1, text.length || 1);
+    }
+    const normalized = text.replace(/\t/g, "  ");
+    return Math.max(1, Math.ceil((normalized.length || 1) / wrapColumns));
 }
 function renderExploreSurface() {
     if (!state.rightParse.ok) {
