@@ -16,7 +16,6 @@
     <div class="page-shell">
       <header class="top-bar">
         <div class="brand-wrap">
-          <p class="eyebrow">Single-page utility</p>
           <h1>JSON Workbench</h1>
         </div>
         <div class="row-actions">
@@ -51,7 +50,7 @@
             <div class="mode-switch" role="tablist" aria-label="Right view modes">
               <button class="mode-btn active" data-mode="json">JSON</button>
               <button class="mode-btn" data-mode="minify">Minify</button>
-              <button class="mode-btn" data-mode="explore">Explore</button>
+              <button class="mode-btn" data-mode="explore">Inspector</button>
               <button class="mode-btn" data-mode="diff">Diff</button>
             </div>
             <button id="copy-right-btn" class="ghost-btn">Copy right</button>
@@ -59,6 +58,7 @@
 
           <div class="right-content">
             <div id="right-editor-shell" class="editor-shell">
+              <pre id="right-highlight" class="syntax-highlight hidden" aria-hidden="true"></pre>
               <textarea
                 id="right-input"
                 class="code-area"
@@ -104,7 +104,7 @@
         </section>
       </main>
 
-      <footer class="status-bar">
+      <footer id="status-bar" class="status-bar">
         <p id="status-path" class="status-path">path: root</p>
         <button id="copy-path-btn" class="ghost-btn">Copy path</button>
       </footer>

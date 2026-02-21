@@ -46,6 +46,7 @@ const elements = {
     leftStatus: byId("left-status"),
     leftStats: byId("left-stats"),
     rightEditorShell: byId("right-editor-shell"),
+    rightHighlight: byId("right-highlight"),
     rightInput: byId("right-input"),
     rightLines: byId("right-lines"),
     rightFoldGutter: byId("right-fold-gutter"),
@@ -64,6 +65,7 @@ const elements = {
     autoRecomputeToggle: byId("auto-recompute-toggle"),
     diffOutput: byId("diff-output"),
     rightViewError: byId("right-view-error"),
+    statusBar: byId("status-bar"),
     statusPath: byId("status-path"),
     copyPathBtn: byId("copy-path-btn"),
     toast: byId("toast"),
@@ -145,6 +147,7 @@ function bindEvents() {
     });
     elements.rightInput.addEventListener("scroll", () => {
         syncLineNumbers(elements.rightInput, elements.rightLines);
+        syncRightHighlightScroll();
         if (state.mode === "json" && !state.rightLocked && state.rightParse.ok) {
             paintFoldGutter();
         }
@@ -200,6 +203,7 @@ function bindEvents() {
     });
     window.addEventListener("resize", () => {
         renderEditorLineNumbers();
+        syncRightHighlightScroll();
         if (state.mode === "json" && !state.rightLocked && state.rightParse.ok) {
             paintFoldGutter();
         }
@@ -436,6 +440,7 @@ function renderModePanels() {
     elements.rightEditorShell.classList.toggle("hidden", state.mode === "explore");
     elements.exploreView.classList.toggle("hidden", state.mode !== "explore");
     elements.diffView.classList.toggle("hidden", state.mode !== "diff");
+    elements.statusBar.classList.toggle("hidden", state.mode !== "explore");
     elements.rightViewError.classList.add("hidden");
     updateRightEditorDisplay();
     if (state.mode === "explore") {
@@ -447,13 +452,16 @@ function renderModePanels() {
 }
 function updateRightEditorDisplay() {
     const preservedScrollTop = elements.rightInput.scrollTop;
+    const preservedScrollLeft = elements.rightInput.scrollLeft;
     if (state.rightLocked) {
         elements.rightInput.disabled = true;
         elements.rightInput.readOnly = false;
         elements.rightInput.value = "";
         elements.rightInput.scrollTop = 0;
+        elements.rightInput.scrollLeft = 0;
         elements.rightFoldGutter.classList.add("hidden");
         elements.rightInput.classList.remove("with-gutter");
+        disableRightSyntaxHighlight();
         return;
     }
     elements.rightInput.disabled = false;
@@ -463,7 +471,9 @@ function updateRightEditorDisplay() {
             elements.rightInput.classList.remove("with-gutter");
             elements.rightInput.value = state.rightText;
             elements.rightInput.scrollTop = preservedScrollTop;
+            elements.rightInput.scrollLeft = preservedScrollLeft;
             elements.rightFoldGutter.classList.add("hidden");
+            disableRightSyntaxHighlight();
             return;
         }
         elements.rightInput.readOnly = true;
@@ -472,6 +482,9 @@ function updateRightEditorDisplay() {
         state.jsonFoldMarkers = folded.markers;
         elements.rightInput.value = folded.text;
         elements.rightInput.scrollTop = preservedScrollTop;
+        elements.rightInput.scrollLeft = preservedScrollLeft;
+        renderRightSyntaxHighlight(folded.text);
+        syncRightHighlightScroll();
         paintFoldGutter();
         return;
     }
@@ -479,7 +492,111 @@ function updateRightEditorDisplay() {
     elements.rightInput.classList.remove("with-gutter");
     elements.rightInput.value = state.rightText;
     elements.rightInput.scrollTop = preservedScrollTop;
+    elements.rightInput.scrollLeft = preservedScrollLeft;
     elements.rightFoldGutter.classList.add("hidden");
+    disableRightSyntaxHighlight();
+}
+function renderRightSyntaxHighlight(text) {
+    elements.rightEditorShell.classList.add("json-syntax-active");
+    elements.rightHighlight.classList.remove("hidden");
+    elements.rightHighlight.innerHTML = buildJsonSyntaxHtml(text);
+}
+function disableRightSyntaxHighlight() {
+    elements.rightEditorShell.classList.remove("json-syntax-active");
+    elements.rightHighlight.classList.add("hidden");
+    elements.rightHighlight.textContent = "";
+}
+function syncRightHighlightScroll() {
+    elements.rightHighlight.scrollTop = elements.rightInput.scrollTop;
+    elements.rightHighlight.scrollLeft = elements.rightInput.scrollLeft;
+}
+function buildJsonSyntaxHtml(text) {
+    const parts = [];
+    let index = 0;
+    while (index < text.length) {
+        const char = text[index];
+        if (char === "\"") {
+            const end = readJsonStringEnd(text, index);
+            const token = text.slice(index, end);
+            let lookahead = end;
+            while (lookahead < text.length && /\s/.test(text[lookahead])) {
+                lookahead += 1;
+            }
+            const className = text[lookahead] === ":" ? "tok-key" : "tok-string";
+            parts.push(wrapJsonToken(token, className));
+            index = end;
+            continue;
+        }
+        if (char === "-" || /[0-9]/.test(char)) {
+            const match = text.slice(index).match(/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/);
+            if (match) {
+                parts.push(wrapJsonToken(match[0], "tok-number"));
+                index += match[0].length;
+                continue;
+            }
+        }
+        if (text.startsWith("true", index) &&
+            isWordBoundary(text[index - 1]) &&
+            isWordBoundary(text[index + 4])) {
+            parts.push(wrapJsonToken("true", "tok-boolean"));
+            index += 4;
+            continue;
+        }
+        if (text.startsWith("false", index) &&
+            isWordBoundary(text[index - 1]) &&
+            isWordBoundary(text[index + 5])) {
+            parts.push(wrapJsonToken("false", "tok-boolean"));
+            index += 5;
+            continue;
+        }
+        if (text.startsWith("null", index) &&
+            isWordBoundary(text[index - 1]) &&
+            isWordBoundary(text[index + 4])) {
+            parts.push(wrapJsonToken("null", "tok-null"));
+            index += 4;
+            continue;
+        }
+        if ("{}[],:".includes(char)) {
+            parts.push(wrapJsonToken(char, "tok-punc"));
+            index += 1;
+            continue;
+        }
+        parts.push(escapeHtml(char));
+        index += 1;
+    }
+    return parts.join("");
+}
+function readJsonStringEnd(text, start) {
+    let index = start + 1;
+    while (index < text.length) {
+        const char = text[index];
+        if (char === "\\") {
+            index += 2;
+            continue;
+        }
+        if (char === "\"") {
+            return index + 1;
+        }
+        index += 1;
+    }
+    return text.length;
+}
+function isWordBoundary(char) {
+    if (!char) {
+        return true;
+    }
+    return /[\s\[\]{}:,]/.test(char);
+}
+function wrapJsonToken(token, className) {
+    return `<span class="syntax-token ${className}">${escapeHtml(token)}</span>`;
+}
+function escapeHtml(value) {
+    return value
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#39;");
 }
 function renderFoldedJsonText(root, collapsed) {
     const lines = [];
