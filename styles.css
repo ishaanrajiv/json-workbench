@@ -309,16 +309,47 @@ body {
 
 .fold-icon {
   position: absolute;
-  width: 16px;
-  height: 16px;
-  border: 1px solid var(--line-strong);
-  border-radius: 4px;
-  background: #526072;
-  color: #e8eff8;
-  font: 700 0.68rem/1 "IBM Plex Mono", monospace;
+  width: 14px;
+  height: 14px;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: #d0dceb;
   cursor: pointer;
   pointer-events: auto;
   padding: 0;
+  transition: background-color 110ms ease;
+}
+
+.fold-icon::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 0;
+  height: 0;
+}
+
+.fold-icon.collapsed::before {
+  border-style: solid;
+  border-width: 4px 0 4px 6px;
+  border-color: transparent transparent transparent currentColor;
+}
+
+.fold-icon.expanded::before {
+  border-style: solid;
+  border-width: 6px 4px 0 4px;
+  border-color: currentColor transparent transparent transparent;
+}
+
+.fold-icon:hover {
+  background: rgba(206, 219, 236, 0.18);
+  color: #f2f8ff;
+}
+
+.fold-icon:active {
+  background: rgba(206, 219, 236, 0.28);
 }
 
 .line-gutter {

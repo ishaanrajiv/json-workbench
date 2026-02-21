@@ -675,8 +675,10 @@ function paintFoldGutter() {
         const iconSize = 16;
         const button = document.createElement("button");
         button.type = "button";
-        button.className = "fold-icon";
-        button.textContent = marker.collapsed ? ">" : "v";
+        button.className = `fold-icon ${marker.collapsed ? "collapsed" : "expanded"}`;
+        button.textContent = "";
+        button.setAttribute("aria-label", marker.collapsed ? "Expand node" : "Collapse node");
+        button.title = marker.collapsed ? "Expand" : "Collapse";
         button.style.top = `${Math.round(y + Math.max(0, (lineHeight - iconSize) / 2))}px`;
         button.style.left = "1px";
         button.addEventListener("click", (event) => {
