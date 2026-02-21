@@ -1,76 +1,40 @@
-type Mode = "json" | "minify" | "table" | "explore" | "diff";
-type UpdateSource = "input" | "paste" | "programmatic";
-type PathSegment = string | number;
-
-type ParseErrorInfo = {
-  message: string;
-  position: number;
-  line: number;
-  column: number;
-  suggestion: string;
-  lineText: string;
-  caretLine: string;
-};
-
-type ParseResult = {
-  empty: boolean;
-  ok: boolean;
-  value: any;
-  error: ParseErrorInfo | null;
-};
-
-type DiffOp =
-  | { type: "equal"; left: string; right: string }
-  | { type: "del"; left: string }
-  | { type: "add"; right: string };
-
-type UnifiedDiffRow = {
-  kind: "context" | "add" | "del";
-  leftNo: number | null;
-  rightNo: number | null;
-  text: string;
-};
-
-type GapDiffRow = {
-  kind: "gap";
-  omitted: number;
-};
-
-type VisibleDiffRow = UnifiedDiffRow | GapDiffRow;
-
-type FoldMarker = {
-  path: PathSegment[];
-  pathKey: string;
-  line: number;
-  depth: number;
-  collapsed: boolean;
-  hasChildren: boolean;
-};
-
-type TextLayoutMetrics = {
-  lineHeight: number;
-  lineTops: number[];
-  lineHeights: number[];
-  totalHeight: number;
-};
-
-type PaneResizeState = {
-  pointerId: number;
-  startX: number;
-  startLeftWidth: number;
-  availableWidth: number;
-};
-
-type HudAnchor = "left" | "right" | "center";
-
-type CommandItem = {
-  id: string;
-  label: string;
-  hint: string;
-  keywords: string;
-  run: () => void | Promise<void>;
-  isAvailable?: () => boolean;
-};
+import {
+  diffLines,
+  operationsToUnifiedRows,
+  sliceDiffWithContext,
+} from "./utils/diff-utils.js";
+import {
+  computeTypeStats,
+  emptyParse,
+  parseJsonWithDiagnostics,
+} from "./utils/json-utils.js";
+import {
+  entryMeta,
+  formatPath,
+  getEntries,
+  hasChild,
+  isContainer,
+  isPlainObject,
+  matchesQuery,
+  sanitizePath,
+  searchTree,
+  toDotPath,
+  toJsonPath,
+  valueType,
+} from "./utils/path-utils.js";
+import type {
+  CommandItem,
+  ExploreHit,
+  FoldMarker,
+  HudAnchor,
+  Mode,
+  PaneResizeState,
+  ParseResult,
+  PathSegment,
+  TextLayoutMetrics,
+  UnifiedDiffRow,
+  UpdateSource,
+} from "./types.js";
 
 function byId<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
@@ -78,10 +42,6 @@ function byId<T extends HTMLElement>(id: string): T {
     throw new Error(`Missing required element: #${id}`);
   }
   return element as T;
-}
-
-function emptyParse(): ParseResult {
-  return { empty: true, ok: false, value: null, error: null };
 }
 
 const state = {
@@ -108,7 +68,7 @@ const state = {
   explorePath: [] as PathSegment[],
   currentPath: [] as PathSegment[],
   exploreQuery: "",
-  exploreHits: [] as Array<{ path: PathSegment[]; preview: string }>,
+  exploreHits: [] as ExploreHit[],
   diffRows: [] as UnifiedDiffRow[],
   diffDirtySinceRecompute: false,
   hudAnchor: "left" as HudAnchor,
@@ -2146,443 +2106,6 @@ function sanitizePathState() {
 
   state.explorePath = sanitizePath(state.explorePath, state.rightParse.value);
   state.currentPath = sanitizePath(state.currentPath, state.rightParse.value);
-}
-
-function parseJsonWithDiagnostics(text: string): ParseResult {
-  if (!text.trim()) {
-    return emptyParse();
-  }
-
-  try {
-    const value = JSON.parse(text);
-    return { empty: false, ok: true, value, error: null };
-  } catch (rawError) {
-    const message = String(rawError instanceof Error ? rawError.message : "Invalid JSON");
-    const position = extractPositionFromMessage(text, message);
-    const location = toLineColumn(text, position);
-    const suggestion = suggestFix(text, position, message);
-    const context = buildErrorContext(text, location.line, location.column);
-
-    return {
-      empty: false,
-      ok: false,
-      value: null,
-      error: {
-        message: normalizeParserMessage(message),
-        position,
-        line: location.line,
-        column: location.column,
-        suggestion,
-        lineText: context.lineText,
-        caretLine: context.caretLine,
-      },
-    };
-  }
-}
-
-function extractPositionFromMessage(text: string, message: string): number {
-  const positionMatch = message.match(/position\s+(\d+)/i);
-  if (positionMatch) {
-    return clamp(Number(positionMatch[1]), 0, Math.max(0, text.length - 1));
-  }
-
-  const lineColMatch = message.match(/line\s+(\d+)\s+column\s+(\d+)/i);
-  if (lineColMatch) {
-    return toOffset(text, Number(lineColMatch[1]), Number(lineColMatch[2]));
-  }
-
-  return Math.max(0, text.length - 1);
-}
-
-function normalizeParserMessage(message: string): string {
-  return message.replace(/\s+in\s+JSON\s+at\s+position\s+\d+/i, "");
-}
-
-function toLineColumn(text: string, position: number) {
-  const lines = text.split(/\r?\n/);
-  let consumed = 0;
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const len = lines[index].length;
-    if (position <= consumed + len) {
-      return { line: index + 1, column: position - consumed + 1 };
-    }
-    consumed += len + 1;
-  }
-
-  const fallback = lines.length || 1;
-  return {
-    line: fallback,
-    column: (lines[fallback - 1] || "").length + 1,
-  };
-}
-
-function toOffset(text: string, line: number, column: number): number {
-  const lines = text.split(/\r?\n/);
-  let offset = 0;
-
-  for (let i = 0; i < line - 1 && i < lines.length; i += 1) {
-    offset += lines[i].length + 1;
-  }
-
-  return clamp(offset + Math.max(0, column - 1), 0, Math.max(0, text.length - 1));
-}
-
-function suggestFix(text: string, position: number, message: string): string {
-  const around = text.slice(Math.max(0, position - 40), Math.min(text.length, position + 40));
-
-  if (/\,\s*[}\]]/.test(around) || /Unexpected token [}\]]/.test(message)) {
-    return "Check for a trailing comma before a closing brace or bracket.";
-  }
-  if (/'[^']*'\s*:|:\s*'[^']*'/.test(around) || /Unexpected token '/.test(message)) {
-    return "Use double quotes for keys and string values.";
-  }
-  if (/[{,]\s*[A-Za-z_$][\w$-]*\s*:/.test(around)) {
-    return "Wrap object keys in double quotes.";
-  }
-  if (/\/\*|\/\//.test(around)) {
-    return "Remove comments. JSON does not allow comments.";
-  }
-  if (/Unexpected end of JSON input/i.test(message)) {
-    return "The document looks truncated. Check missing closing braces or brackets.";
-  }
-  if (/"\s*"/.test(around) || /\d\s*"/.test(around) || /true\s*"/.test(around)) {
-    return "You may be missing a comma between values.";
-  }
-
-  return "Inspect this position for missing commas, quotes, or invalid characters.";
-}
-
-function buildErrorContext(text: string, line: number, column: number) {
-  const lines = text.split(/\r?\n/);
-  const lineText = lines[Math.max(0, line - 1)] || "";
-  const caretLine = `${" ".repeat(Math.max(0, column - 1))}^`;
-  return { lineText, caretLine };
-}
-
-function computeTypeStats(root: any) {
-  const stats = {
-    keys: 0,
-    objects: 0,
-    arrays: 0,
-    nulls: 0,
-  };
-
-  walk(root, true);
-  return stats;
-
-  function walk(value: any, isRoot: boolean) {
-    if (value === null) {
-      stats.nulls += 1;
-      return;
-    }
-
-    if (Array.isArray(value)) {
-      stats.arrays += 1;
-      value.forEach((item) => walk(item, false));
-      return;
-    }
-
-    if (typeof value === "object") {
-      if (!isRoot) {
-        stats.objects += 1;
-      }
-      const keys = Object.keys(value);
-      stats.keys += keys.length;
-      keys.forEach((key) => walk(value[key], false));
-    }
-  }
-}
-
-function diffLines(left: string[], right: string[]): DiffOp[] {
-  const n = left.length;
-  const m = right.length;
-
-  if (n * m > 3000000) {
-    return quickDiff(left, right);
-  }
-
-  const table = Array.from({ length: n + 1 }, () => new Int32Array(m + 1));
-
-  for (let i = n - 1; i >= 0; i -= 1) {
-    for (let j = m - 1; j >= 0; j -= 1) {
-      if (left[i] === right[j]) {
-        table[i][j] = table[i + 1][j + 1] + 1;
-      } else {
-        table[i][j] = Math.max(table[i + 1][j], table[i][j + 1]);
-      }
-    }
-  }
-
-  const ops: DiffOp[] = [];
-  let i = 0;
-  let j = 0;
-
-  while (i < n && j < m) {
-    if (left[i] === right[j]) {
-      ops.push({ type: "equal", left: left[i], right: right[j] });
-      i += 1;
-      j += 1;
-      continue;
-    }
-
-    if (table[i + 1][j] >= table[i][j + 1]) {
-      ops.push({ type: "del", left: left[i] });
-      i += 1;
-    } else {
-      ops.push({ type: "add", right: right[j] });
-      j += 1;
-    }
-  }
-
-  while (i < n) {
-    ops.push({ type: "del", left: left[i] });
-    i += 1;
-  }
-
-  while (j < m) {
-    ops.push({ type: "add", right: right[j] });
-    j += 1;
-  }
-
-  return ops;
-}
-
-function quickDiff(left: string[], right: string[]): DiffOp[] {
-  const ops: DiffOp[] = [];
-  const max = Math.max(left.length, right.length);
-
-  for (let i = 0; i < max; i += 1) {
-    const l = left[i];
-    const r = right[i];
-
-    if (l === r && l !== undefined) {
-      ops.push({ type: "equal", left: l, right: r });
-      continue;
-    }
-
-    if (l !== undefined) {
-      ops.push({ type: "del", left: l });
-    }
-
-    if (r !== undefined) {
-      ops.push({ type: "add", right: r });
-    }
-  }
-
-  return ops;
-}
-
-function operationsToUnifiedRows(ops: DiffOp[]): UnifiedDiffRow[] {
-  const rows: UnifiedDiffRow[] = [];
-  let leftNo = 1;
-  let rightNo = 1;
-
-  ops.forEach((op) => {
-    if (op.type === "equal") {
-      rows.push({ kind: "context", leftNo, rightNo, text: op.left });
-      leftNo += 1;
-      rightNo += 1;
-      return;
-    }
-
-    if (op.type === "del") {
-      rows.push({ kind: "del", leftNo, rightNo: null, text: op.left });
-      leftNo += 1;
-      return;
-    }
-
-    rows.push({ kind: "add", leftNo: null, rightNo, text: op.right });
-    rightNo += 1;
-  });
-
-  return rows;
-}
-
-function sliceDiffWithContext(rows: UnifiedDiffRow[], contextLines: number): VisibleDiffRow[] {
-  const changedIndexes: number[] = [];
-  rows.forEach((row, index) => {
-    if (row.kind !== "context") {
-      changedIndexes.push(index);
-    }
-  });
-
-  if (!changedIndexes.length) {
-    return [];
-  }
-
-  const keep = new Array(rows.length).fill(false);
-  changedIndexes.forEach((index) => {
-    const start = Math.max(0, index - contextLines);
-    const end = Math.min(rows.length - 1, index + contextLines);
-    for (let i = start; i <= end; i += 1) {
-      keep[i] = true;
-    }
-  });
-
-  const visible: VisibleDiffRow[] = [];
-  let cursor = 0;
-
-  while (cursor < rows.length) {
-    if (keep[cursor]) {
-      visible.push(rows[cursor]);
-      cursor += 1;
-      continue;
-    }
-
-    const start = cursor;
-    while (cursor < rows.length && !keep[cursor]) {
-      cursor += 1;
-    }
-    const omitted = cursor - start;
-    if (omitted > 0) {
-      visible.push({ kind: "gap", omitted });
-    }
-  }
-
-  return visible;
-}
-
-function getEntries(value: any): Array<[PathSegment, any]> {
-  if (Array.isArray(value)) {
-    return value.map((item, index) => [index, item]);
-  }
-  return Object.entries(value) as Array<[PathSegment, any]>;
-}
-
-function sanitizePath(path: PathSegment[], root: any): PathSegment[] {
-  const clean: PathSegment[] = [];
-  let cursor = root;
-
-  for (let i = 0; i < path.length; i += 1) {
-    const segment = path[i];
-    if (!isContainer(cursor) || !hasChild(cursor, segment)) {
-      break;
-    }
-    clean.push(segment);
-    cursor = cursor[segment as keyof typeof cursor];
-  }
-
-  return clean;
-}
-
-function hasChild(container: any, key: PathSegment): boolean {
-  if (Array.isArray(container)) {
-    return typeof key === "number" && Number.isInteger(key) && key >= 0 && key < container.length;
-  }
-  return Object.prototype.hasOwnProperty.call(container, key);
-}
-
-function isContainer(value: any): boolean {
-  return Array.isArray(value) || isPlainObject(value);
-}
-
-function isPlainObject(value: any): boolean {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function valueType(value: any): string {
-  if (value === null) {
-    return "null";
-  }
-  if (Array.isArray(value)) {
-    return "array";
-  }
-  return typeof value;
-}
-
-function entryMeta(value: any): string {
-  if (Array.isArray(value)) {
-    return `array (${value.length})`;
-  }
-  if (isPlainObject(value)) {
-    return `object (${Object.keys(value).length})`;
-  }
-  return `${valueType(value)} ${truncate(String(value), 22)}`;
-}
-
-function matchesQuery(key: PathSegment, value: any, query: string): boolean {
-  if (!query) {
-    return false;
-  }
-  const lower = query.toLowerCase();
-  if (String(key).toLowerCase().includes(lower)) {
-    return true;
-  }
-  if (isContainer(value)) {
-    return false;
-  }
-  return String(value).toLowerCase().includes(lower);
-}
-
-function searchTree(root: any, query: string, maxResults: number) {
-  const lower = query.toLowerCase();
-  const hits: Array<{ path: PathSegment[]; preview: string }> = [];
-
-  walk(root, []);
-  return hits;
-
-  function walk(value: any, path: PathSegment[]) {
-    if (hits.length >= maxResults) {
-      return;
-    }
-
-    if (Array.isArray(value)) {
-      value.forEach((item, index) => walk(item, path.concat(index)));
-      return;
-    }
-
-    if (isPlainObject(value)) {
-      Object.keys(value).forEach((key) => {
-        const nextPath = path.concat(key);
-        if (key.toLowerCase().includes(lower) && hits.length < maxResults) {
-          hits.push({ path: nextPath, preview: `key "${key}"` });
-        }
-        walk(value[key], nextPath);
-      });
-      return;
-    }
-
-    const text = String(value);
-    if (text.toLowerCase().includes(lower) && hits.length < maxResults) {
-      hits.push({ path, preview: `${valueType(value)} ${truncate(text, 26)}` });
-    }
-  }
-}
-
-function formatPath(path: PathSegment[]): string {
-  if (!path.length) {
-    return "root";
-  }
-  return `root > ${path.map((segment) => String(segment)).join(" > ")}`;
-}
-
-function toDotPath(path: PathSegment[]): string {
-  let output = "root";
-  path.forEach((segment) => {
-    if (typeof segment === "number") {
-      output += `[${segment}]`;
-    } else if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(segment)) {
-      output += `.${segment}`;
-    } else {
-      output += `[${JSON.stringify(segment)}]`;
-    }
-  });
-  return output;
-}
-
-function toJsonPath(path: PathSegment[]): string {
-  let output = "$";
-  path.forEach((segment) => {
-    if (typeof segment === "number") {
-      output += `[${segment}]`;
-    } else if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(segment)) {
-      output += `.${segment}`;
-    } else {
-      output += `[${JSON.stringify(segment)}]`;
-    }
-  });
-  return output;
 }
 
 async function copyPathText(path: PathSegment[]) {

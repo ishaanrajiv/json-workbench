@@ -2,11 +2,15 @@
   "compilerOptions": {
     "target": "ES2020",
     "module": "ES2020",
+    "moduleResolution": "bundler",
     "lib": ["ES2020", "DOM"],
+    "rootDir": "src",
+    "outDir": "public/dist",
     "strict": false,
     "noEmitOnError": true,
     "skipLibCheck": true,
     "removeComments": false
   },
-  "include": ["app.ts"]
+  "include": ["src/**/*.ts"],
+  "exclude": ["public/dist", "node_modules"]
 }

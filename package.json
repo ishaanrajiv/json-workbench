@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "dev": "python3 -m http.server 4173"
+    "dev": "python3 -m http.server 4173 --directory public"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

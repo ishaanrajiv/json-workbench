@@ -20,10 +20,15 @@ It runs entirely on the client as a single-page app, with no backend required.
 
 ## Stack
 
-- `index.html`: static app shell
-- `styles.css`: all styling and layout
-- `app.ts`: source of truth for app logic
-- `app.js`: generated browser runtime (compiled from `app.ts`)
+- `public/index.html`: static app shell
+- `public/assets/styles.css`: all styling and layout
+- `public/assets/favicon.svg`: favicon asset
+- `src/app.ts`: app bootstrap + UI orchestration
+- `src/types.ts`: shared TypeScript types
+- `src/utils/json-utils.ts`: JSON parsing diagnostics + stats helpers
+- `src/utils/diff-utils.ts`: diff algorithm + row shaping helpers
+- `src/utils/path-utils.ts`: path/search/container helpers
+- `public/dist/*.js`: generated browser runtime (compiled from `src/**/*.ts`)
 - TypeScript compiler only (no framework, no bundler)
 
 ## Requirements
@@ -59,9 +64,9 @@ http://localhost:4173
 
 ## NPM scripts
 
-- `npm run build`: compile `app.ts` -> `app.js`
+- `npm run build`: compile `src/**/*.ts` -> `public/dist/*.js`
 - `npm run typecheck`: run TypeScript type checking without emit
-- `npm run dev`: serve the project via `python3 -m http.server 4173`
+- `npm run dev`: serve `public/` via `python3 -m http.server 4173 --directory public`
 
 ## Usage flow
 
@@ -95,10 +100,19 @@ This project is configured for static deployment on Vercel.
 
 ```text
 .
-├── index.html
-├── styles.css
-├── app.ts
-├── app.js
+├── public/
+│   ├── index.html
+│   ├── assets/
+│   │   ├── styles.css
+│   │   └── favicon.svg
+│   └── dist/
+├── src/
+│   ├── app.ts
+│   ├── types.ts
+│   └── utils/
+│       ├── json-utils.ts
+│       ├── diff-utils.ts
+│       └── path-utils.ts
 ├── package.json
 ├── tsconfig.json
 └── vercel.json
