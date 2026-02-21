@@ -275,7 +275,7 @@ body.pane-resize-active * {
 }
 
 #right-editor-shell .syntax-highlight {
-  filter: saturate(1) contrast(1.06);
+  filter: saturate(0.7) contrast(1.06);
 }
 
 #right-editor-shell .syntax-token.tok-punc {
