@@ -108,6 +108,7 @@ const elements = {
   leftStats: byId<HTMLElement>("left-stats"),
 
   rightEditorShell: byId<HTMLElement>("right-editor-shell"),
+  rightContent: byId<HTMLElement>("right-content"),
   rightHighlight: byId<HTMLElement>("right-highlight"),
   rightInput: byId<HTMLTextAreaElement>("right-input"),
   rightLines: byId<HTMLElement>("right-lines"),
@@ -580,6 +581,7 @@ function renderModePanels() {
   elements.exploreView.classList.toggle("hidden", state.mode !== "explore");
   elements.diffView.classList.toggle("hidden", state.mode !== "diff");
   elements.statusBar.classList.toggle("hidden", state.mode !== "explore");
+  elements.rightContent.classList.toggle("diff-active", state.mode === "diff");
 
   elements.rightViewError.classList.add("hidden");
 

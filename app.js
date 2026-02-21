@@ -46,6 +46,7 @@ const elements = {
     leftStatus: byId("left-status"),
     leftStats: byId("left-stats"),
     rightEditorShell: byId("right-editor-shell"),
+    rightContent: byId("right-content"),
     rightHighlight: byId("right-highlight"),
     rightInput: byId("right-input"),
     rightLines: byId("right-lines"),
@@ -441,6 +442,7 @@ function renderModePanels() {
     elements.exploreView.classList.toggle("hidden", state.mode !== "explore");
     elements.diffView.classList.toggle("hidden", state.mode !== "diff");
     elements.statusBar.classList.toggle("hidden", state.mode !== "explore");
+    elements.rightContent.classList.toggle("diff-active", state.mode === "diff");
     elements.rightViewError.classList.add("hidden");
     updateRightEditorDisplay();
     if (state.mode === "explore") {

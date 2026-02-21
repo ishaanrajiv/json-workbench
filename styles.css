@@ -463,9 +463,30 @@ body {
   gap: 7px;
 }
 
+.right-content.diff-active {
+  gap: 12px;
+}
+
+.right-content.diff-active #right-editor-shell {
+  flex: 0 0 clamp(200px, 32vh, 320px);
+  min-height: 0;
+}
+
+.right-content.diff-active #right-editor-shell .code-area {
+  min-height: 0;
+}
+
 .view-panel {
   flex: 1;
   min-height: 0;
+}
+
+#diff-view {
+  margin-top: 12px;
+}
+
+.right-content.diff-active #diff-view {
+  margin-top: 0;
 }
 
 .hidden {
