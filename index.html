@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>JSON Workbench</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=JetBrains+Mono:wght@400;600&family=Sora:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="top-bar">
+        <div class="brand-wrap">
+          <p class="eyebrow">Single-page utility</p>
+          <h1>JSON Workbench</h1>
+        </div>
+        <div class="row-actions">
+          <button id="load-sample-btn" class="ghost-btn">Load sample</button>
+          <button id="resync-btn" class="ghost-btn">Resync right</button>
+        </div>
+      </header>
+
+      <main class="workspace-grid">
+        <section class="pane">
+          <div class="editor-shell">
+            <textarea
+              id="left-input"
+              class="code-area"
+              spellcheck="false"
+              wrap="soft"
+              placeholder='Paste JSON here, e.g. {"users":[{"name":"Ada"}]}'
+            ></textarea>
+            <div class="line-gutter" aria-hidden="true">
+              <div id="left-lines" class="line-numbers"></div>
+            </div>
+            <div id="left-overlay" class="error-overlay hidden" role="status" aria-live="polite"></div>
+          </div>
+          <div class="pane-footer">
+            <p id="left-status" class="state-pill neutral">Waiting for JSON.</p>
+            <p id="left-stats" class="meta-text">Left is source. Right unlocks after first paste.</p>
+          </div>
+        </section>
+
+        <section class="pane">
+          <div class="pane-toolbar">
+            <div class="mode-switch" role="tablist" aria-label="Right view modes">
+              <button class="mode-btn active" data-mode="json">JSON</button>
+              <button class="mode-btn" data-mode="minify">Minify</button>
+              <button class="mode-btn" data-mode="explore">Explore</button>
+              <button class="mode-btn" data-mode="diff">Diff</button>
+            </div>
+            <button id="copy-right-btn" class="ghost-btn">Copy right</button>
+          </div>
+
+          <div class="right-content">
+            <div id="right-editor-shell" class="editor-shell">
+              <textarea
+                id="right-input"
+                class="code-area"
+                spellcheck="false"
+                wrap="soft"
+                placeholder="Right editor is locked until left has content."
+                disabled
+              ></textarea>
+              <div class="line-gutter" aria-hidden="true">
+                <div id="right-lines" class="line-numbers"></div>
+              </div>
+              <div id="right-fold-gutter" class="fold-gutter hidden" aria-hidden="true"></div>
+              <div id="right-overlay" class="error-overlay hidden" role="status" aria-live="polite"></div>
+            </div>
+
+            <section id="explore-view" class="view-panel hidden">
+              <div class="explore-tools">
+                <input id="explore-search" class="search-input" type="text" placeholder="Search keys or values" />
+                <button id="clear-explore-search" class="ghost-btn">Clear</button>
+              </div>
+              <div id="explore-breadcrumb" class="breadcrumb-row">root</div>
+              <div id="explore-results" class="search-results"></div>
+              <div id="explore-columns" class="miller-columns empty-state">Enter valid right JSON to explore.</div>
+            </section>
+
+            <section id="diff-view" class="view-panel hidden">
+              <div class="diff-tools">
+                <button id="recompute-diff-btn" class="ghost-btn">Recompute diff</button>
+                <label class="toggle-inline">
+                  <input id="auto-recompute-toggle" type="checkbox" checked />
+                  <span>Auto recompute</span>
+                </label>
+              </div>
+              <div id="diff-output" class="diff-output empty-state">Diff appears here after recompute.</div>
+            </section>
+
+            <div id="right-view-error" class="view-error hidden"></div>
+          </div>
+
+          <div class="pane-footer">
+            <p id="right-status" class="state-pill neutral">Locked</p>
+          </div>
+        </section>
+      </main>
+
+      <footer class="status-bar">
+        <p id="status-path" class="status-path">path: root</p>
+        <button id="copy-path-btn" class="ghost-btn">Copy path</button>
+      </footer>
+    </div>
+
+    <div id="toast" class="toast" aria-live="polite"></div>
+    <script src="app.js"></script>
+  </body>
+</html>

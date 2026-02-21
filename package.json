@@ -1,0 +1,14 @@
+{
+  "name": "json-workbench",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Single-page JSON utility with validation, format, explore, and diff tools.",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "python3 -m http.server 4173"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}
