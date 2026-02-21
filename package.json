@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "description": "Single-page JSON utility with validation, format, explore, and diff tools.",
+  "license": "MIT",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
