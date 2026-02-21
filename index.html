@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="styles.css" />
@@ -19,6 +19,7 @@
           <h1>JSON Workbench</h1>
         </div>
         <div class="row-actions">
+          <button id="command-palette-btn" class="ghost-btn">Cmd/Ctrl+K</button>
           <button id="load-sample-btn" class="ghost-btn">Load sample</button>
           <button id="resync-btn" class="ghost-btn">Resync right</button>
         </div>
@@ -126,6 +127,30 @@
         <button id="copy-path-btn" class="ghost-btn">Copy path</button>
       </footer>
     </div>
+
+    <aside id="path-hud" class="path-hud center" aria-live="polite">
+      <p id="path-hud-label" class="path-hud-label">Source</p>
+      <p id="path-hud-path" class="path-hud-path">root</p>
+    </aside>
+
+    <section id="command-palette" class="command-palette hidden" role="dialog" aria-modal="true" aria-label="Command palette">
+      <div class="command-panel">
+        <div class="command-head">
+          <p class="command-title">Command Palette</p>
+          <p class="command-hint">Esc to close</p>
+        </div>
+        <input
+          id="command-input"
+          class="command-input"
+          type="text"
+          placeholder="Type a command..."
+          autocomplete="off"
+          spellcheck="false"
+          aria-label="Filter commands"
+        />
+        <div id="command-results" class="command-results"></div>
+      </div>
+    </section>
 
     <div id="toast" class="toast" aria-live="polite"></div>
     <script src="app.js"></script>
