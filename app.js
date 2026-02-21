@@ -35,6 +35,11 @@ const state = {
     exploreHits: [],
     diffRows: [],
     diffDirtySinceRecompute: false,
+    hudAnchor: "left",
+    hudLabel: "Source",
+    commandPaletteOpen: false,
+    commandQuery: "",
+    commandSelectedIndex: 0,
 };
 let charMeasureCanvas = null;
 const monoCharWidthCache = new Map();
@@ -46,6 +51,7 @@ const elements = {
     leftPane: byId("left-pane"),
     rightPane: byId("right-pane"),
     paneResizer: byId("pane-resizer"),
+    commandPaletteBtn: byId("command-palette-btn"),
     loadSampleBtn: byId("load-sample-btn"),
     resyncBtn: byId("resync-btn"),
     leftInput: byId("left-input"),
@@ -80,6 +86,12 @@ const elements = {
     statusBar: byId("status-bar"),
     statusPath: byId("status-path"),
     copyPathBtn: byId("copy-path-btn"),
+    pathHud: byId("path-hud"),
+    pathHudLabel: byId("path-hud-label"),
+    pathHudPath: byId("path-hud-path"),
+    commandPalette: byId("command-palette"),
+    commandInput: byId("command-input"),
+    commandResults: byId("command-results"),
     toast: byId("toast"),
 };
 let toastTimer;
@@ -88,43 +100,29 @@ let rightPastePending = false;
 boot();
 function boot() {
     bindEvents();
+    renderCommandPalette();
     applyPaneSplitFromRatio();
     refreshFromLeft("programmatic");
 }
 function bindEvents() {
-    elements.loadSampleBtn.addEventListener("click", () => {
-        const sample = {
-            users: [
-                { id: 1, name: "Ada", address: { city: "London", active: true } },
-                { id: 2, name: "Linus", address: { city: "Helsinki", active: false } },
-            ],
-            meta: {
-                version: 3,
-                exportedAt: "2026-02-21T08:30:00Z",
-                tags: ["sample", "demo"],
-            },
-            flags: { beta: null, retries: 2 },
-        };
-        elements.leftInput.value = JSON.stringify(sample, null, 2);
-        state.leftText = elements.leftInput.value;
-        state.rightDirty = false;
-        refreshFromLeft("programmatic");
-        showToast("Sample loaded on left.");
-    });
-    elements.resyncBtn.addEventListener("click", () => {
-        if (state.rightLocked || !state.leftParse.ok) {
+    elements.commandPaletteBtn.addEventListener("click", () => {
+        if (state.commandPaletteOpen) {
+            closeCommandPalette();
             return;
         }
-        state.rightDirty = false;
-        syncRightFromLeftForMode();
-        renderAll("programmatic");
-        if (state.mode === "diff") {
-            recomputeDiff(true);
-        }
-        showToast("Right synced from left.");
+        openCommandPalette();
+    });
+    elements.loadSampleBtn.addEventListener("click", () => {
+        loadSampleIntoLeft();
+    });
+    elements.resyncBtn.addEventListener("click", () => {
+        resyncRightFromLeft();
     });
     elements.leftInput.addEventListener("paste", () => {
         leftPastePending = true;
+    });
+    elements.leftInput.addEventListener("focus", () => {
+        setHudContext("left", "Source");
     });
     elements.leftInput.addEventListener("input", () => {
         const source = leftPastePending ? "paste" : "input";
@@ -137,6 +135,9 @@ function bindEvents() {
     });
     elements.rightInput.addEventListener("paste", () => {
         rightPastePending = true;
+    });
+    elements.rightInput.addEventListener("focus", () => {
+        setHudContext("right", hudLabelForMode(state.mode));
     });
     elements.rightInput.addEventListener("input", () => {
         if (state.rightLocked) {
@@ -158,6 +159,21 @@ function bindEvents() {
         }
         renderAll(source);
     });
+    elements.rightInput.addEventListener("click", () => {
+        updateCurrentPathFromRightCursor();
+    });
+    elements.rightInput.addEventListener("select", () => {
+        updateCurrentPathFromRightCursor();
+    });
+    elements.rightInput.addEventListener("keyup", (event) => {
+        if (event.key.startsWith("Arrow") ||
+            event.key === "Home" ||
+            event.key === "End" ||
+            event.key === "PageUp" ||
+            event.key === "PageDown") {
+            updateCurrentPathFromRightCursor();
+        }
+    });
     elements.rightInput.addEventListener("scroll", () => {
         syncLineNumbers(elements.rightInput, elements.rightLines);
         syncRightHighlightScroll();
@@ -171,12 +187,8 @@ function bindEvents() {
     elements.rightOverlay.addEventListener("click", () => {
         jumpToError("right", true);
     });
-    elements.copyRightBtn.addEventListener("click", async () => {
-        if (!state.rightText.trim()) {
-            return;
-        }
-        const ok = await copyText(state.rightText);
-        showToast(ok ? "Right JSON copied." : "Clipboard write failed.");
+    elements.copyRightBtn.addEventListener("click", () => {
+        void copyRightOutput();
     });
     elements.paneResizer.addEventListener("pointerdown", handlePaneResizePointerDown);
     elements.paneResizer.addEventListener("keydown", handlePaneResizeKeydown);
@@ -204,6 +216,9 @@ function bindEvents() {
             renderExploreSurface();
         }
     });
+    elements.exploreSearch.addEventListener("focus", () => {
+        setHudContext("right", hudLabelForMode("explore"));
+    });
     elements.clearExploreSearch.addEventListener("click", () => {
         state.exploreQuery = "";
         elements.exploreSearch.value = "";
@@ -213,8 +228,35 @@ function bindEvents() {
         }
     });
     elements.copyPathBtn.addEventListener("click", async () => {
-        const ok = await copyPathText(state.currentPath);
-        showToast(ok ? "Path copied." : "Clipboard write failed.");
+        await copyActivePath();
+    });
+    elements.commandInput.addEventListener("input", () => {
+        state.commandQuery = elements.commandInput.value.trim();
+        state.commandSelectedIndex = 0;
+        renderCommandPalette();
+    });
+    elements.commandPalette.addEventListener("click", (event) => {
+        if (event.target === elements.commandPalette) {
+            closeCommandPalette();
+        }
+    });
+    document.addEventListener("focusin", (event) => {
+        updateHudAnchorFromTarget(event.target);
+    });
+    window.addEventListener("keydown", handleGlobalKeydown);
+    window.addEventListener("mousedown", (event) => {
+        if (!state.commandPaletteOpen) {
+            return;
+        }
+        const target = event.target;
+        if (!target) {
+            return;
+        }
+        if (elements.commandPalette.contains(target) ||
+            elements.commandPaletteBtn.contains(target)) {
+            return;
+        }
+        closeCommandPalette();
     });
     window.addEventListener("resize", () => {
         applyPaneSplitFromRatio();
@@ -224,6 +266,50 @@ function bindEvents() {
             paintFoldGutter();
         }
     });
+}
+function loadSampleIntoLeft() {
+    const sample = {
+        users: [
+            { id: 1, name: "Ada", address: { city: "London", active: true } },
+            { id: 2, name: "Linus", address: { city: "Helsinki", active: false } },
+        ],
+        meta: {
+            version: 3,
+            exportedAt: "2026-02-21T08:30:00Z",
+            tags: ["sample", "demo"],
+        },
+        flags: { beta: null, retries: 2 },
+    };
+    elements.leftInput.value = JSON.stringify(sample, null, 2);
+    state.leftText = elements.leftInput.value;
+    state.rightDirty = false;
+    refreshFromLeft("programmatic");
+    setHudContext("left", "Source");
+    showToast("Sample loaded on left.");
+}
+function resyncRightFromLeft() {
+    if (state.rightLocked || !state.leftParse.ok) {
+        return;
+    }
+    state.rightDirty = false;
+    syncRightFromLeftForMode();
+    renderAll("programmatic");
+    if (state.mode === "diff") {
+        recomputeDiff(true);
+    }
+    setHudContext("right", hudLabelForMode(state.mode));
+    showToast("Right synced from left.");
+}
+async function copyRightOutput() {
+    if (!state.rightText.trim()) {
+        return;
+    }
+    const ok = await copyText(state.rightText);
+    showToast(ok ? "Right JSON copied." : "Clipboard write failed.");
+}
+async function copyActivePath() {
+    const ok = await copyPathText(state.currentPath);
+    showToast(ok ? "Path copied." : "Clipboard write failed.");
 }
 function handlePaneResizePointerDown(event) {
     if (shouldUseSingleColumnLayout()) {
@@ -296,6 +382,307 @@ function handlePaneResizeKeydown(event) {
     }
     state.paneSplitRatio = nextRatio;
     applyPaneSplitFromRatio();
+}
+function handleGlobalKeydown(event) {
+    if (event.isComposing) {
+        return;
+    }
+    const key = event.key.toLowerCase();
+    const isPaletteShortcut = (event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && key === "k";
+    if (isPaletteShortcut) {
+        event.preventDefault();
+        if (state.commandPaletteOpen) {
+            closeCommandPalette();
+        }
+        else {
+            openCommandPalette();
+        }
+        return;
+    }
+    if (!state.commandPaletteOpen) {
+        return;
+    }
+    if (event.key === "Escape") {
+        event.preventDefault();
+        closeCommandPalette();
+        return;
+    }
+    const visible = getVisibleCommands();
+    if (!visible.length) {
+        return;
+    }
+    if (event.key === "ArrowDown") {
+        event.preventDefault();
+        state.commandSelectedIndex = (state.commandSelectedIndex + 1) % visible.length;
+        renderCommandPalette();
+        return;
+    }
+    if (event.key === "ArrowUp") {
+        event.preventDefault();
+        state.commandSelectedIndex = (state.commandSelectedIndex - 1 + visible.length) % visible.length;
+        renderCommandPalette();
+        return;
+    }
+    if (event.key === "Enter") {
+        event.preventDefault();
+        const active = visible[state.commandSelectedIndex];
+        if (active) {
+            executePaletteCommand(active);
+        }
+    }
+}
+function openCommandPalette() {
+    state.commandPaletteOpen = true;
+    state.commandQuery = "";
+    state.commandSelectedIndex = 0;
+    elements.commandInput.value = "";
+    setHudContext("center", "Command Palette");
+    renderCommandPalette();
+    window.requestAnimationFrame(() => {
+        elements.commandInput.focus();
+    });
+}
+function closeCommandPalette() {
+    if (!state.commandPaletteOpen) {
+        return;
+    }
+    state.commandPaletteOpen = false;
+    state.commandQuery = "";
+    state.commandSelectedIndex = 0;
+    elements.commandInput.value = "";
+    renderCommandPalette();
+    updateHudAnchorFromTarget(document.activeElement);
+    if (state.hudAnchor === "center") {
+        setHudContext(state.rightLocked ? "left" : "right", state.rightLocked ? "Source" : hudLabelForMode(state.mode));
+    }
+}
+function renderCommandPalette() {
+    elements.commandPalette.classList.toggle("hidden", !state.commandPaletteOpen);
+    elements.commandPaletteBtn.classList.toggle("active", state.commandPaletteOpen);
+    document.body.classList.toggle("command-palette-open", state.commandPaletteOpen);
+    const visible = getVisibleCommands();
+    const maxIndex = Math.max(0, visible.length - 1);
+    state.commandSelectedIndex = clamp(state.commandSelectedIndex, 0, maxIndex);
+    elements.commandResults.textContent = "";
+    if (!state.commandPaletteOpen) {
+        return;
+    }
+    if (!visible.length) {
+        const empty = document.createElement("p");
+        empty.className = "command-empty";
+        empty.textContent = "No commands match that query.";
+        elements.commandResults.appendChild(empty);
+        return;
+    }
+    const fragment = document.createDocumentFragment();
+    visible.forEach((command, index) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "command-item";
+        button.setAttribute("data-command-id", command.id);
+        button.classList.toggle("active", index === state.commandSelectedIndex);
+        const textWrap = document.createElement("span");
+        textWrap.className = "command-item-copy";
+        const label = document.createElement("span");
+        label.className = "command-item-label";
+        label.textContent = command.label;
+        const hint = document.createElement("span");
+        hint.className = "command-item-hint";
+        hint.textContent = command.hint;
+        textWrap.append(label, hint);
+        button.appendChild(textWrap);
+        button.addEventListener("mouseenter", () => {
+            if (state.commandSelectedIndex === index) {
+                return;
+            }
+            state.commandSelectedIndex = index;
+            renderCommandPalette();
+        });
+        button.addEventListener("click", () => {
+            executePaletteCommand(command);
+        });
+        fragment.appendChild(button);
+    });
+    elements.commandResults.appendChild(fragment);
+}
+function executePaletteCommand(command) {
+    closeCommandPalette();
+    void Promise.resolve(command.run()).catch(() => {
+        showToast("Command failed.");
+    });
+}
+function getVisibleCommands() {
+    const query = state.commandQuery.toLowerCase();
+    return getCommandItems().filter((command) => {
+        if (command.isAvailable && !command.isAvailable()) {
+            return false;
+        }
+        if (!query) {
+            return true;
+        }
+        const haystack = `${command.label} ${command.hint} ${command.keywords}`.toLowerCase();
+        return haystack.includes(query);
+    });
+}
+function getCommandItems() {
+    return [
+        {
+            id: "mode-json",
+            label: "Switch Mode: JSON",
+            hint: "Formatted and foldable JSON view",
+            keywords: "mode json pretty format",
+            run: () => setMode("json"),
+        },
+        {
+            id: "mode-minify",
+            label: "Switch Mode: Minify",
+            hint: "Compact JSON editing mode",
+            keywords: "mode minify compact",
+            run: () => setMode("minify"),
+        },
+        {
+            id: "mode-explore",
+            label: "Switch Mode: Inspector",
+            hint: "Browse structure with Miller columns",
+            keywords: "mode explore inspector columns",
+            run: () => setMode("explore"),
+        },
+        {
+            id: "mode-diff",
+            label: "Switch Mode: Diff",
+            hint: "Compare left and right JSON",
+            keywords: "mode diff compare",
+            run: () => setMode("diff"),
+        },
+        {
+            id: "mode-table",
+            label: "Switch Mode: Table",
+            hint: "Array-to-table surface",
+            keywords: "mode table array grid",
+            run: () => setMode("table"),
+            isAvailable: () => isTableModeAvailable(),
+        },
+        {
+            id: "load-sample",
+            label: "Load Sample JSON",
+            hint: "Fill left editor with demo data",
+            keywords: "sample left quickstart",
+            run: () => loadSampleIntoLeft(),
+        },
+        {
+            id: "resync-right",
+            label: "Resync Right From Left",
+            hint: "Reset right pane to left JSON",
+            keywords: "resync right sync reset",
+            run: () => resyncRightFromLeft(),
+            isAvailable: () => !state.rightLocked && state.leftParse.ok,
+        },
+        {
+            id: "copy-right",
+            label: "Copy Right JSON",
+            hint: "Copy current right content",
+            keywords: "copy right clipboard",
+            run: () => copyRightOutput(),
+            isAvailable: () => !state.rightLocked && !!state.rightText.trim(),
+        },
+        {
+            id: "recompute-diff",
+            label: "Recompute Diff",
+            hint: "Refresh diff rows now",
+            keywords: "diff recompute refresh",
+            run: () => {
+                if (state.mode !== "diff") {
+                    setMode("diff");
+                }
+                recomputeDiff(true);
+            },
+            isAvailable: () => !state.rightLocked,
+        },
+        {
+            id: "toggle-auto-diff",
+            label: "Toggle Auto Recompute",
+            hint: elements.autoRecomputeToggle.checked ? "Currently enabled" : "Currently disabled",
+            keywords: "diff auto recompute toggle",
+            run: () => {
+                elements.autoRecomputeToggle.checked = !elements.autoRecomputeToggle.checked;
+                if (state.mode === "diff" && elements.autoRecomputeToggle.checked) {
+                    recomputeDiff(false);
+                }
+                showToast(`Auto recompute ${elements.autoRecomputeToggle.checked ? "enabled" : "disabled"}.`);
+            },
+            isAvailable: () => !state.rightLocked,
+        },
+        {
+            id: "copy-path",
+            label: "Copy Active Path",
+            hint: "Copy dot path and JSONPath",
+            keywords: "path copy breadcrumb",
+            run: () => copyActivePath(),
+            isAvailable: () => !state.rightLocked && state.rightParse.ok,
+        },
+    ];
+}
+function hudLabelForMode(mode) {
+    if (mode === "json") {
+        return "Right JSON";
+    }
+    if (mode === "minify") {
+        return "Minify";
+    }
+    if (mode === "explore") {
+        return "Inspector";
+    }
+    if (mode === "diff") {
+        return "Diff";
+    }
+    return "Table";
+}
+function setHudContext(anchor, label) {
+    state.hudAnchor = anchor;
+    state.hudLabel = label;
+    renderStatusPath();
+}
+function updateHudAnchorFromTarget(target) {
+    if (!(target instanceof HTMLElement)) {
+        return;
+    }
+    if (elements.commandPalette.contains(target)) {
+        if (state.commandPaletteOpen) {
+            setHudContext("center", "Command Palette");
+        }
+        return;
+    }
+    if (elements.leftPane.contains(target)) {
+        setHudContext("left", "Source");
+        return;
+    }
+    if (elements.rightPane.contains(target) || elements.statusBar.contains(target)) {
+        setHudContext("right", hudLabelForMode(state.mode));
+    }
+}
+function updateCurrentPathFromRightCursor() {
+    if (state.rightLocked || !state.rightParse.ok) {
+        return;
+    }
+    if (state.mode !== "json") {
+        state.currentPath = [];
+        renderStatusPath();
+        return;
+    }
+    const offset = elements.rightInput.selectionStart ?? 0;
+    const line = Math.max(0, elements.rightInput.value.slice(0, offset).split(/\r?\n/).length - 1);
+    const marker = findNearestFoldMarker(line);
+    state.currentPath = marker ? marker.path.slice() : [];
+    renderStatusPath();
+}
+function findNearestFoldMarker(line) {
+    for (let index = state.jsonFoldMarkers.length - 1; index >= 0; index -= 1) {
+        const marker = state.jsonFoldMarkers[index];
+        if (marker.line <= line) {
+            return marker;
+        }
+    }
+    return state.jsonFoldMarkers[0] ?? null;
 }
 function shouldUseSingleColumnLayout() {
     return window.matchMedia("(max-width: 1220px)").matches;
@@ -389,17 +776,23 @@ function lockRight() {
     elements.rightInput.value = "";
     elements.rightInput.placeholder = "Right editor is locked until left has content.";
     elements.rightFoldGutter.classList.add("hidden");
+    setHudContext("left", "Source");
 }
 function setMode(mode) {
     if (state.mode === mode) {
+        setHudContext("right", hudLabelForMode(state.mode));
         return;
     }
     state.mode = mode;
     if (!state.rightLocked && state.leftParse.ok && !state.rightDirty) {
         syncRightFromLeftForMode();
     }
+    if (mode !== "explore" && mode !== "json") {
+        state.currentPath = [];
+    }
     renderAll("programmatic");
-    if (mode === "diff") {
+    setHudContext("right", hudLabelForMode(state.mode));
+    if (state.mode === "diff") {
         recomputeDiff(true);
     }
 }
@@ -623,6 +1016,7 @@ function updateRightEditorDisplay() {
         renderRightSyntaxHighlight(folded.text);
         syncRightHighlightScroll();
         paintFoldGutter();
+        updateCurrentPathFromRightCursor();
         return;
     }
     elements.rightInput.readOnly = false;
@@ -1320,7 +1714,12 @@ function renderRightViewError(message) {
     elements.rightViewError.textContent = message;
 }
 function renderStatusPath() {
-    elements.statusPath.textContent = `path: ${formatPath(state.currentPath)}`;
+    const pathText = formatPath(state.currentPath);
+    elements.statusPath.textContent = `path: ${pathText}`;
+    elements.pathHudLabel.textContent = state.hudLabel;
+    elements.pathHudPath.textContent = pathText;
+    elements.pathHud.classList.remove("left", "right", "center");
+    elements.pathHud.classList.add(state.hudAnchor);
 }
 function sanitizePathState() {
     if (!state.rightParse.ok) {
