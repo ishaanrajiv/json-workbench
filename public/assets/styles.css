@@ -194,13 +194,11 @@ body.pane-resize-active * {
   z-index: 1;
   background:
     linear-gradient(180deg, var(--code-bg), var(--code-bg-alt)),
-    repeating-linear-gradient(
-      to bottom,
+    repeating-linear-gradient(to bottom,
       rgba(244, 248, 255, 0.06),
       rgba(244, 248, 255, 0.06) 24px,
       rgba(244, 248, 255, 0.02) 24px,
-      rgba(244, 248, 255, 0.02) 48px
-    );
+      rgba(244, 248, 255, 0.02) 48px);
   color: var(--code-ink);
   font: 500 0.83rem/1.55 "IBM Plex Mono", monospace;
   white-space: pre-wrap;
@@ -225,13 +223,11 @@ body.pane-resize-active * {
   padding: 10px 10px 10px 44px;
   background:
     linear-gradient(180deg, var(--code-bg), var(--code-bg-alt)),
-    repeating-linear-gradient(
-      to bottom,
+    repeating-linear-gradient(to bottom,
       rgba(244, 248, 255, 0.06),
       rgba(244, 248, 255, 0.06) 24px,
       rgba(244, 248, 255, 0.02) 24px,
-      rgba(244, 248, 255, 0.02) 48px
-    );
+      rgba(244, 248, 255, 0.02) 48px);
   color: var(--code-ink);
   font: 500 0.83rem/1.55 "IBM Plex Mono", monospace;
   white-space: pre-wrap;
@@ -276,6 +272,34 @@ body.pane-resize-active * {
 
 .syntax-token.tok-null {
   color: #f3aaa7;
+}
+
+#right-editor-shell .syntax-highlight {
+  filter: saturate(1) contrast(1.06);
+}
+
+#right-editor-shell .syntax-token.tok-punc {
+  color: #d6e9ff;
+}
+
+#right-editor-shell .syntax-token.tok-key {
+  color: #63d0ff;
+}
+
+#right-editor-shell .syntax-token.tok-string {
+  color: #b4f38b;
+}
+
+#right-editor-shell .syntax-token.tok-number {
+  color: #ffc46b;
+}
+
+#right-editor-shell .syntax-token.tok-boolean {
+  color: #ee9be0;
+}
+
+#right-editor-shell .syntax-token.tok-null {
+  color: #ff8f85;
 }
 
 .code-area::placeholder {
@@ -1163,13 +1187,11 @@ body::before {
   border-radius: 10px;
   background:
     linear-gradient(180deg, var(--code-bg), var(--code-bg-alt)),
-    repeating-linear-gradient(
-      to bottom,
+    repeating-linear-gradient(to bottom,
       rgba(219, 233, 255, 0.06),
       rgba(219, 233, 255, 0.06) 24px,
       rgba(219, 233, 255, 0.02) 24px,
-      rgba(219, 233, 255, 0.02) 48px
-    );
+      rgba(219, 233, 255, 0.02) 48px);
   color: var(--code-ink);
 }
 
