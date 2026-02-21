@@ -129,7 +129,8 @@ body {
 }
 
 .pane::before {
-  content: "CH-01";
+  content: "";
+  display: none;
   position: absolute;
   top: -9px;
   right: 8px;
@@ -143,7 +144,8 @@ body {
 }
 
 .workspace-grid .pane:nth-of-type(2)::before {
-  content: "CH-02";
+  content: "";
+  display: none;
 }
 
 .pane-resizer {

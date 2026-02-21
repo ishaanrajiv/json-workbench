@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="{}">
+  <rect width="64" height="64" rx="12" fill="#2d3440" />
+  <text
+    x="32"
+    y="42"
+    text-anchor="middle"
+    font-family="JetBrains Mono, ui-monospace, monospace"
+    font-size="34"
+    font-weight="700"
+    fill="#eceff4"
+  >
+    {}
+  </text>
+</svg>
