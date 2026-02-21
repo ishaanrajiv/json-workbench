@@ -1,4 +1,4 @@
-type Mode = "json" | "minify" | "explore" | "diff";
+type Mode = "json" | "minify" | "table" | "explore" | "diff";
 type UpdateSource = "input" | "paste" | "programmatic";
 type PathSegment = string | number;
 
@@ -116,6 +116,7 @@ const elements = {
   rightOverlay: byId<HTMLElement>("right-overlay"),
   rightStatus: byId<HTMLElement>("right-status"),
   copyRightBtn: byId<HTMLButtonElement>("copy-right-btn"),
+  tableModeBtn: byId<HTMLButtonElement>("table-mode-btn"),
 
   modeButtons: Array.from(document.querySelectorAll<HTMLButtonElement>(".mode-btn")),
 
@@ -130,6 +131,8 @@ const elements = {
   recomputeDiffBtn: byId<HTMLButtonElement>("recompute-diff-btn"),
   autoRecomputeToggle: byId<HTMLInputElement>("auto-recompute-toggle"),
   diffOutput: byId<HTMLElement>("diff-output"),
+  tableView: byId<HTMLElement>("table-view"),
+  tableOutput: byId<HTMLElement>("table-output"),
 
   rightViewError: byId<HTMLElement>("right-view-error"),
   statusBar: byId<HTMLElement>("status-bar"),
@@ -399,7 +402,18 @@ function syncRightFromLeftForMode() {
   state.rightParse = parseJsonWithDiagnostics(formatted);
 }
 
+function normalizeModeAvailability() {
+  if (state.mode === "table" && !isTableModeAvailable()) {
+    state.mode = "json";
+  }
+}
+
+function isTableModeAvailable(): boolean {
+  return !state.rightLocked && state.rightParse.ok && Array.isArray(state.rightParse.value);
+}
+
 function renderAll(source: UpdateSource) {
+  normalizeModeAvailability();
   renderLeftPanel(source);
   renderRightPanel(source);
   renderModePanels();
@@ -431,7 +445,7 @@ function renderLeftPanel(source: UpdateSource) {
 function renderRightPanel(source: UpdateSource) {
   renderStatePill(elements.rightStatus, state.rightParse, state.rightLocked);
 
-  const editorVisible = state.mode !== "explore";
+  const editorVisible = state.mode !== "explore" && state.mode !== "table";
   const showOverlay =
     editorVisible &&
     state.mode !== "diff" &&
@@ -573,11 +587,15 @@ function highlightError(textarea: HTMLTextAreaElement, position: number, focus: 
 }
 
 function renderModePanels() {
+  const tableModeVisible = isTableModeAvailable();
+  elements.tableModeBtn.classList.toggle("hidden", !tableModeVisible);
+
   elements.modeButtons.forEach((button) => {
     button.classList.toggle("active", button.dataset.mode === state.mode);
   });
 
-  elements.rightEditorShell.classList.toggle("hidden", state.mode === "explore");
+  elements.rightEditorShell.classList.toggle("hidden", state.mode === "explore" || state.mode === "table");
+  elements.tableView.classList.toggle("hidden", state.mode !== "table");
   elements.exploreView.classList.toggle("hidden", state.mode !== "explore");
   elements.diffView.classList.toggle("hidden", state.mode !== "diff");
   elements.statusBar.classList.toggle("hidden", state.mode !== "explore");
@@ -593,6 +611,10 @@ function renderModePanels() {
 
   if (state.mode === "diff") {
     renderDiffSurface();
+  }
+
+  if (state.mode === "table") {
+    renderTableSurface();
   }
 }
 
@@ -1211,6 +1233,172 @@ function renderExploreHits() {
     });
     container.appendChild(button);
   });
+}
+
+function renderTableSurface() {
+  const output = elements.tableOutput;
+  output.textContent = "";
+
+  if (!isTableModeAvailable()) {
+    output.classList.add("empty-state");
+    output.textContent = "Table mode requires a top-level array.";
+    return;
+  }
+
+  const rows = state.rightParse.value as any[];
+  if (!rows.length) {
+    output.classList.add("empty-state");
+    output.textContent = "Array is empty.";
+    return;
+  }
+
+  output.classList.remove("empty-state");
+
+  const columns = collectTableColumns(rows);
+
+  const table = document.createElement("table");
+  table.className = "json-table";
+
+  const head = document.createElement("thead");
+  const headRow = document.createElement("tr");
+
+  const indexHead = document.createElement("th");
+  indexHead.className = "json-table-index-head";
+  indexHead.textContent = "#";
+  headRow.appendChild(indexHead);
+
+  columns.forEach((column) => {
+    const cell = document.createElement("th");
+    cell.textContent = formatTableColumnLabel(column);
+    headRow.appendChild(cell);
+  });
+
+  head.appendChild(headRow);
+  table.appendChild(head);
+
+  const body = document.createElement("tbody");
+
+  rows.forEach((row, rowIndex) => {
+    const rowEl = document.createElement("tr");
+
+    const rowLabel = document.createElement("th");
+    rowLabel.className = "json-table-index-cell";
+    rowLabel.textContent = String(rowIndex);
+    rowEl.appendChild(rowLabel);
+
+    columns.forEach((column) => {
+      const cell = document.createElement("td");
+      const value = getTableCellValue(row, column);
+      const formatted = formatTableCellValue(value);
+      cell.textContent = formatted;
+      cell.classList.add(getTableCellClass(value));
+      if (formatted.length > 120) {
+        cell.title = formatted;
+      }
+      rowEl.appendChild(cell);
+    });
+
+    body.appendChild(rowEl);
+  });
+
+  table.appendChild(body);
+  output.appendChild(table);
+}
+
+function collectTableColumns(rows: any[]): string[] {
+  const objectKeys = new Set<string>();
+  let sawObjectRow = false;
+
+  rows.forEach((row) => {
+    if (!isPlainObject(row)) {
+      return;
+    }
+    sawObjectRow = true;
+    Object.keys(row).forEach((key) => objectKeys.add(key));
+  });
+
+  if (sawObjectRow && objectKeys.size) {
+    return Array.from(objectKeys);
+  }
+
+  let maxArrayLength = 0;
+  rows.forEach((row) => {
+    if (Array.isArray(row)) {
+      maxArrayLength = Math.max(maxArrayLength, row.length);
+    }
+  });
+
+  if (maxArrayLength > 0) {
+    return Array.from({ length: maxArrayLength }, (_, index) => String(index));
+  }
+
+  return ["value"];
+}
+
+function formatTableColumnLabel(column: string): string {
+  if (column === "value") {
+    return "value";
+  }
+  return /^\d+$/.test(column) ? `[${column}]` : column;
+}
+
+function getTableCellValue(row: any, column: string): any {
+  if (column === "value") {
+    return row;
+  }
+  if (isPlainObject(row)) {
+    return row[column];
+  }
+  if (Array.isArray(row) && /^\d+$/.test(column)) {
+    return row[Number(column)];
+  }
+  return undefined;
+}
+
+function formatTableCellValue(value: any): string {
+  if (value === undefined) {
+    return "—";
+  }
+  if (value === null) {
+    return "null";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  try {
+    return truncate(JSON.stringify(value), 160);
+  } catch (_error) {
+    return truncate(String(value), 160);
+  }
+}
+
+function getTableCellClass(value: any): string {
+  if (value === undefined) {
+    return "table-cell-empty";
+  }
+  if (value === null) {
+    return "table-cell-null";
+  }
+  if (typeof value === "string") {
+    return "table-cell-string";
+  }
+  if (typeof value === "number") {
+    return "table-cell-number";
+  }
+  if (typeof value === "boolean") {
+    return "table-cell-boolean";
+  }
+  if (Array.isArray(value)) {
+    return "table-cell-array";
+  }
+  if (isPlainObject(value)) {
+    return "table-cell-object";
+  }
+  return "table-cell-raw";
 }
 
 function recomputeDiff(formatBoth: boolean) {

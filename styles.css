@@ -760,6 +760,95 @@ body {
   font: 500 0.76rem/1.45 "IBM Plex Mono", monospace;
 }
 
+.table-output {
+  min-height: 220px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-0);
+  overflow: auto;
+}
+
+.table-output.empty-state {
+  display: grid;
+  place-items: center;
+  color: #617ea2;
+  font-size: 0.8rem;
+  padding: 10px;
+}
+
+.json-table {
+  width: 100%;
+  min-width: 420px;
+  border-collapse: collapse;
+  table-layout: auto;
+  font: 500 0.74rem/1.45 "IBM Plex Mono", monospace;
+  color: #2a425f;
+}
+
+.json-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  border-bottom: 1px solid var(--line-strong);
+  border-right: 1px solid var(--line);
+  background: #d6e0ec;
+  padding: 7px 8px;
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.json-table thead th:last-child {
+  border-right: 0;
+}
+
+.json-table tbody th,
+.json-table tbody td {
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 6px 8px;
+  text-align: left;
+  vertical-align: top;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.json-table tbody th:last-child,
+.json-table tbody td:last-child {
+  border-right: 0;
+}
+
+.json-table-index-head,
+.json-table-index-cell {
+  width: 52px;
+  min-width: 52px;
+  color: #5d7899;
+  background: #dce5f0;
+}
+
+.table-cell-empty {
+  color: #6e86a3;
+  font-style: italic;
+}
+
+.table-cell-null {
+  color: #b84b4a;
+}
+
+.table-cell-number {
+  color: #8c6132;
+}
+
+.table-cell-boolean {
+  color: #754f8a;
+}
+
+.table-cell-array,
+.table-cell-object {
+  color: #365f95;
+}
+
 .view-error {
   border: 1px solid rgba(166, 51, 48, 0.4);
   border-radius: 6px;

@@ -50,6 +50,7 @@
             <div class="mode-switch" role="tablist" aria-label="Right view modes">
               <button class="mode-btn active" data-mode="json">JSON</button>
               <button class="mode-btn" data-mode="minify">Minify</button>
+              <button id="table-mode-btn" class="mode-btn hidden" data-mode="table">Table</button>
               <button class="mode-btn" data-mode="explore">Inspector</button>
               <button class="mode-btn" data-mode="diff">Diff</button>
             </div>
@@ -93,6 +94,10 @@
                 </label>
               </div>
               <div id="diff-output" class="diff-output empty-state">Diff appears here after recompute.</div>
+            </section>
+
+            <section id="table-view" class="view-panel hidden">
+              <div id="table-output" class="table-output empty-state">Table mode requires a top-level array.</div>
             </section>
 
             <div id="right-view-error" class="view-error hidden"></div>
