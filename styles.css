@@ -109,8 +109,8 @@ body {
 .workspace-grid {
   padding: 10px;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) 12px minmax(0, 1fr);
+  gap: 0;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
@@ -142,8 +142,38 @@ body {
   letter-spacing: 0.08em;
 }
 
-.workspace-grid .pane:nth-child(2)::before {
+.workspace-grid .pane:nth-of-type(2)::before {
   content: "CH-02";
+}
+
+.pane-resizer {
+  position: relative;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+}
+
+.pane-resizer::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 72px;
+  border-radius: 999px;
+  background: rgba(110, 129, 152, 0.68);
+}
+
+.pane-resizer:hover::before,
+.workspace-grid.is-resizing .pane-resizer::before {
+  background: #4d6788;
+}
+
+body.pane-resize-active,
+body.pane-resize-active * {
+  cursor: col-resize !important;
+  user-select: none !important;
 }
 
 .editor-shell {
@@ -953,6 +983,11 @@ textarea {
 @media (max-width: 1220px) {
   .workspace-grid {
     grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .pane-resizer {
+    display: none;
   }
 
   .code-area {

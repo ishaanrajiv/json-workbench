@@ -24,8 +24,8 @@
         </div>
       </header>
 
-      <main class="workspace-grid">
-        <section class="pane">
+      <main id="workspace-grid" class="workspace-grid">
+        <section id="left-pane" class="pane">
           <div class="editor-shell">
             <textarea
               id="left-input"
@@ -45,7 +45,19 @@
           </div>
         </section>
 
-        <section class="pane">
+        <div
+          id="pane-resizer"
+          class="pane-resizer"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize panes"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow="50"
+          tabindex="0"
+        ></div>
+
+        <section id="right-pane" class="pane">
           <div class="pane-toolbar">
             <div class="mode-switch" role="tablist" aria-label="Right view modes">
               <button class="mode-btn active" data-mode="json">JSON</button>

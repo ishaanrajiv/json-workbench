@@ -54,6 +54,13 @@ type TextLayoutMetrics = {
   totalHeight: number;
 };
 
+type PaneResizeState = {
+  pointerId: number;
+  startX: number;
+  startLeftWidth: number;
+  availableWidth: number;
+};
+
 function byId<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
   if (!element) {
@@ -72,6 +79,7 @@ const state = {
   rightText: "",
   rightLocked: true,
   rightDirty: false,
+  paneSplitRatio: null as number | null,
   leftLayout: null as TextLayoutMetrics | null,
   rightLayout: null as TextLayoutMetrics | null,
   leftParse: emptyParse(),
@@ -96,8 +104,16 @@ const state = {
 
 let charMeasureCanvas: HTMLCanvasElement | null = null;
 const monoCharWidthCache = new Map<string, number>();
+const PANE_RESIZER_WIDTH = 12;
+const MIN_PANE_WIDTH_PX = 280;
+let activePaneResize: PaneResizeState | null = null;
 
 const elements = {
+  workspaceGrid: byId<HTMLElement>("workspace-grid"),
+  leftPane: byId<HTMLElement>("left-pane"),
+  rightPane: byId<HTMLElement>("right-pane"),
+  paneResizer: byId<HTMLElement>("pane-resizer"),
+
   loadSampleBtn: byId<HTMLButtonElement>("load-sample-btn"),
   resyncBtn: byId<HTMLButtonElement>("resync-btn"),
 
@@ -149,6 +165,7 @@ boot();
 
 function boot() {
   bindEvents();
+  applyPaneSplitFromRatio();
   refreshFromLeft("programmatic");
 }
 
@@ -255,6 +272,9 @@ function bindEvents() {
     showToast(ok ? "Right JSON copied." : "Clipboard write failed.");
   });
 
+  elements.paneResizer.addEventListener("pointerdown", handlePaneResizePointerDown);
+  elements.paneResizer.addEventListener("keydown", handlePaneResizeKeydown);
+
   elements.modeButtons.forEach((button) => {
     button.addEventListener("click", () => {
       const mode = button.dataset.mode as Mode | undefined;
@@ -298,12 +318,142 @@ function bindEvents() {
   });
 
   window.addEventListener("resize", () => {
+    applyPaneSplitFromRatio();
     renderEditorLineNumbers();
     syncRightHighlightScroll();
     if (state.mode === "json" && !state.rightLocked && state.rightParse.ok) {
       paintFoldGutter();
     }
   });
+}
+
+function handlePaneResizePointerDown(event: PointerEvent) {
+  if (shouldUseSingleColumnLayout()) {
+    return;
+  }
+
+  const availableWidth = elements.workspaceGrid.clientWidth - PANE_RESIZER_WIDTH;
+  if (availableWidth <= MIN_PANE_WIDTH_PX * 2) {
+    return;
+  }
+
+  event.preventDefault();
+
+  activePaneResize = {
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startLeftWidth: elements.leftPane.getBoundingClientRect().width,
+    availableWidth,
+  };
+
+  elements.workspaceGrid.classList.add("is-resizing");
+  document.body.classList.add("pane-resize-active");
+  elements.paneResizer.setPointerCapture(event.pointerId);
+  elements.paneResizer.addEventListener("pointermove", handlePaneResizePointerMove);
+  elements.paneResizer.addEventListener("pointerup", handlePaneResizePointerUp);
+  elements.paneResizer.addEventListener("pointercancel", handlePaneResizePointerUp);
+}
+
+function handlePaneResizePointerMove(event: PointerEvent) {
+  if (!activePaneResize || event.pointerId !== activePaneResize.pointerId) {
+    return;
+  }
+
+  const delta = event.clientX - activePaneResize.startX;
+  const nextLeft = clamp(
+    activePaneResize.startLeftWidth + delta,
+    MIN_PANE_WIDTH_PX,
+    activePaneResize.availableWidth - MIN_PANE_WIDTH_PX,
+  );
+
+  state.paneSplitRatio = nextLeft / activePaneResize.availableWidth;
+  applyPaneSplitFromRatio();
+}
+
+function handlePaneResizePointerUp(event: PointerEvent) {
+  if (!activePaneResize || event.pointerId !== activePaneResize.pointerId) {
+    return;
+  }
+
+  elements.paneResizer.releasePointerCapture(event.pointerId);
+  elements.paneResizer.removeEventListener("pointermove", handlePaneResizePointerMove);
+  elements.paneResizer.removeEventListener("pointerup", handlePaneResizePointerUp);
+  elements.paneResizer.removeEventListener("pointercancel", handlePaneResizePointerUp);
+  elements.workspaceGrid.classList.remove("is-resizing");
+  document.body.classList.remove("pane-resize-active");
+  activePaneResize = null;
+}
+
+function handlePaneResizeKeydown(event: KeyboardEvent) {
+  if (shouldUseSingleColumnLayout()) {
+    return;
+  }
+
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+    return;
+  }
+
+  const availableWidth = elements.workspaceGrid.clientWidth - PANE_RESIZER_WIDTH;
+  if (availableWidth <= MIN_PANE_WIDTH_PX * 2) {
+    return;
+  }
+
+  event.preventDefault();
+
+  const stepRatio = (event.shiftKey ? 12 : 24) / availableWidth;
+  let nextRatio = state.paneSplitRatio ?? elements.leftPane.getBoundingClientRect().width / availableWidth;
+
+  if (event.key === "ArrowLeft") {
+    nextRatio -= stepRatio;
+  } else if (event.key === "ArrowRight") {
+    nextRatio += stepRatio;
+  } else if (event.key === "Home") {
+    nextRatio = MIN_PANE_WIDTH_PX / availableWidth;
+  } else if (event.key === "End") {
+    nextRatio = 1 - MIN_PANE_WIDTH_PX / availableWidth;
+  }
+
+  state.paneSplitRatio = nextRatio;
+  applyPaneSplitFromRatio();
+}
+
+function shouldUseSingleColumnLayout(): boolean {
+  return window.matchMedia("(max-width: 1220px)").matches;
+}
+
+function applyPaneSplitFromRatio() {
+  if (shouldUseSingleColumnLayout()) {
+    clearPaneSplit();
+    return;
+  }
+
+  const availableWidth = elements.workspaceGrid.clientWidth - PANE_RESIZER_WIDTH;
+  if (availableWidth <= MIN_PANE_WIDTH_PX * 2) {
+    clearPaneSplit();
+    return;
+  }
+
+  const minRatio = MIN_PANE_WIDTH_PX / availableWidth;
+  const maxRatio = 1 - minRatio;
+  const nextRatio = clamp(state.paneSplitRatio ?? 0.5, minRatio, maxRatio);
+  state.paneSplitRatio = nextRatio;
+
+  const leftWidth = Math.round(availableWidth * nextRatio);
+  const rightWidth = Math.round(availableWidth - leftWidth);
+  elements.workspaceGrid.style.gridTemplateColumns = `${leftWidth}px ${PANE_RESIZER_WIDTH}px ${rightWidth}px`;
+  elements.paneResizer.setAttribute("aria-valuenow", String(Math.round(nextRatio * 100)));
+}
+
+function clearPaneSplit() {
+  elements.workspaceGrid.style.removeProperty("grid-template-columns");
+  elements.workspaceGrid.classList.remove("is-resizing");
+  document.body.classList.remove("pane-resize-active");
+  if (activePaneResize) {
+    elements.paneResizer.removeEventListener("pointermove", handlePaneResizePointerMove);
+    elements.paneResizer.removeEventListener("pointerup", handlePaneResizePointerUp);
+    elements.paneResizer.removeEventListener("pointercancel", handlePaneResizePointerUp);
+  }
+  activePaneResize = null;
 }
 
 function refreshFromLeft(source: UpdateSource) {
